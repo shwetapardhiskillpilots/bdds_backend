@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Database
+database.db
+*.sqlite3
+
+# Environment
+.env
+
+# Logs
+*.log
+tunnel.log
+fresh_tunnel.log
+
+# Temporary/Output files
+url.txt
+/tmp/
+
+# IDEs
+.vscode/
+.idea/
