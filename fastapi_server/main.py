@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import master, form, auth, media, dashboard, admin, sp_authority
+from routers import master, form, auth, media, dashboard, admin, sp_authority, investigation, public
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
@@ -28,6 +28,8 @@ app.include_router(media.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(sp_authority.router)
+app.include_router(investigation.router, prefix="/investigation", tags=["Investigation"])
+app.include_router(public.router, prefix="/public", tags=["Public Awareness"])
 
 @app.get("/")
 async def root():

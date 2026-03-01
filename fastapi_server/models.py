@@ -122,6 +122,7 @@ class Form_data(Base):
     edit_request = Column(Integer, default=0)
     delete_request = Column(Integer, default=0)
     user_id = Column(Integer, ForeignKey('auth_user.id'))
+    is_public = Column(Integer, default=0) # 1 for reports from Public Awareness App
 
     fdalam = relationship("N_dalam", secondary=form_dalam_association)
 
@@ -176,6 +177,7 @@ class AuthUser(Base):
     is_active = Column(Integer)
     is_staff = Column(Integer, default=0)
     is_superuser = Column(Integer, default=0)
+    date_joined = Column(DateTime, default=datetime.utcnow)
 
 class Nlogines_creations(Base):
     __tablename__ = 'bdds_dashboard_nlogines_creations'
@@ -197,3 +199,21 @@ class AuthToken(Base):
     created = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("AuthUser", backref="auth_token")
+
+class CriminalDossier(Base):
+    __tablename__ = 'bdds_investigation_dossier'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), index=True)
+    alias = Column(String(200))
+    description = Column(Text)
+    photo_path = Column(String(255))
+    status = Column(String(50), default='Active') # Active, Incarcerated, Deceased, etc.
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CriminalLink(Base):
+    __tablename__ = 'bdds_investigation_link'
+    id = Column(Integer, primary_key=True, index=True)
+    form_id = Column(Integer, ForeignKey('bdds_dashboard_form_data.id'))
+    criminal_id = Column(Integer, ForeignKey('bdds_investigation_dossier.id'))
+    role = Column(String(50)) # Suspect, Accused, Witness
+    created_at = Column(DateTime, default=datetime.utcnow)

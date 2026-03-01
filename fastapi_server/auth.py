@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from database import get_db
-from models import AuthToken, AuthUser
+from models import AuthToken
 import time
 
 API_KEY_NAME = "Authorization"

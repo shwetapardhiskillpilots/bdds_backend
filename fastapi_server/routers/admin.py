@@ -9,7 +9,7 @@ from models import (
     N_dispose, N_dalam
 )
 from auth import get_current_user
-from schemas import UserProfileResponse, MasterItemResponse, MasterItemBase
+from schemas import UserProfileResponse, MasterItemBase
 
 router = APIRouter(prefix="/dashboard", tags=["admin"])
 

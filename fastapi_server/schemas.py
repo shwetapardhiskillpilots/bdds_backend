@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Optional
 from datetime import datetime
 
 # --- Dashboard Schemas ---
@@ -28,7 +28,7 @@ class MasterItemResponse(BaseModel):
     name: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- User Management Schemas ---
 
@@ -56,7 +56,7 @@ class UserProfileResponse(BaseModel):
     is_superuser: bool
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- SP Authority Schemas ---
 
@@ -74,7 +74,7 @@ class SPAuthorityResponse(SPAuthorityBase):
     s_datetime: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # --- Location Management Schemas ---
 
