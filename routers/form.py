@@ -29,10 +29,15 @@ def clean_mobile_data(data: dict) -> dict:
     """Robust cleaning for cases where mobile apps send quoted keys/values"""
     clean_data = {}
     for k, v in data.items():
-        clean_k = k.strip(' "\'{}:')
-        val = v[0] if isinstance(v, list) and len(v) > 0 else v
+        if isinstance(k, str):
+            clean_k = k.strip(' "\'{}:')
+        else:
+            clean_k = str(k)
+            
+        val = v[0] if isinstance(v, list) and len(v) > 0 and isinstance(v[0], str) else v
         if isinstance(val, str):
             val = val.strip(' "\',}:')
+            
         if clean_k:
             clean_data[clean_k] = val
     return clean_data

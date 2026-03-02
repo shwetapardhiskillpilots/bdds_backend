@@ -6,6 +6,10 @@ from models import AuthUser, AuthToken, Nlogines_creations, N_degignation, N_pos
 from auth import get_current_user
 from datetime import datetime
 import secrets
+from passlib.context import CryptContext
+
+# Django uses pbkdf2_sha256 by default
+pwd_context = CryptContext(schemes=["django_pbkdf2_sha256"], deprecated="auto")
 
 router = APIRouter()
 
@@ -28,7 +32,20 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(status_code=400, detail="User not found")
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+        
+    if not password:
+        raise HTTPException(status_code=400, detail="Password required")
+        
+    # Verify the password against Django's hash
+    try:
+        is_valid = pwd_context.verify(password, user.password)
+    except Exception as e:
+        # Fallback if the hash format isn't recognized or is corrupted
+        is_valid = False
+        
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid username or password")
     
     # Mirroring Token behavior
     token_result = await db.execute(select(AuthToken).where(AuthToken.user_id == user.id))
@@ -179,7 +196,7 @@ async def login_creation(request: Request, db: AsyncSession = Depends(get_db)):
             email=user_email,
             first_name=user_name,
             last_name=str(user_designation), # Mirroring Django's behavior of storing ID as last_name
-            password=user_password,
+            password=pwd_context.hash(user_password),
             is_active=1,
             is_staff=0,
             is_superuser=0,
@@ -232,7 +249,7 @@ async def password_update(request: Request, db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Please Insert Correct Mobile Number and Email Id")
 
-    user.password = password1  # Mirroring Django's storage pattern
+    user.password = pwd_context.hash(password1)  # Hash it instead of plain text
     await db.commit()
     return {"status": 200, "message": "Password Update successfully"}
 

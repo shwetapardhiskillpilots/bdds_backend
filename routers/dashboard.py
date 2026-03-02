@@ -14,7 +14,7 @@ import time
 
 # ── Simple TTL Cache (avoids repeated remote DB calls) ──
 _stats_cache: dict = {}  # key: user_id or "admin" -> {"data": ..., "ts": time.time()}
-CACHE_TTL = 60  # seconds
+CACHE_TTL = 2  # seconds
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 

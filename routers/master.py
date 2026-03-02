@@ -128,7 +128,6 @@ async def get_explosives(
 
 # --- Location Management ---
 
-@router.post("/api_proxy/updlocation")
 @router.post("/updlocation")
 async def update_location(
     data: LocationUpdate, 
@@ -147,7 +146,6 @@ async def update_location(
     await db.commit()
     return {"status": 200, "message": "Location updated successfully"}
 
-@router.post("/api_proxy/dlocation")
 @router.post("/dlocation")
 async def delete_location(
     data: LocationDelete, 
