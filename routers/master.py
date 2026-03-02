@@ -19,9 +19,8 @@ async def get_locations(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_location))).scalar() or 0
     result = await db.execute(select(N_location).order_by(N_location.l_location).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/apijuridiction")
 async def get_jurisdictions(
@@ -30,9 +29,8 @@ async def get_jurisdictions(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_juridiction))).scalar() or 0
     result = await db.execute(select(N_juridiction).order_by(N_juridiction.l_juridiction).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/apiincident")
 async def get_incidents(
@@ -41,9 +39,8 @@ async def get_incidents(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_incident))).scalar() or 0
     result = await db.execute(select(N_incident).order_by(N_incident.i_incident).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/apiweight")
 async def get_weights(
@@ -52,9 +49,8 @@ async def get_weights(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_weight))).scalar() or 0
     result = await db.execute(select(N_weight).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/dalam")
 async def get_dalam(
@@ -63,9 +59,8 @@ async def get_dalam(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_dalam))).scalar() or 0
     result = await db.execute(select(N_dalam).order_by(N_dalam.d_dalam).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/serdesignation")
 @router.get("/master/serdesignation")
@@ -75,9 +70,8 @@ async def get_designations(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_degignation))).scalar() or 0
     result = await db.execute(select(N_degignation).order_by(N_degignation.d_designation).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/assusedapi")
 @router.get("/master/accusedapi")
@@ -87,9 +81,8 @@ async def get_assused(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_assused))).scalar() or 0
     result = await db.execute(select(N_assused).order_by(N_assused.a_assused).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/postapi")
 async def get_posts(
@@ -98,9 +91,8 @@ async def get_posts(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_post))).scalar() or 0
     result = await db.execute(select(N_post).order_by(N_post.p_post).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/ditectionapi")
 @router.get("/master/detectionapi")
@@ -110,9 +102,8 @@ async def get_detections(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_ditection))).scalar() or 0
     result = await db.execute(select(N_ditection).order_by(N_ditection.d_ditection).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/despose")
 @router.get("/master/dispose")
@@ -122,9 +113,8 @@ async def get_disposes(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_dispose))).scalar() or 0
     result = await db.execute(select(N_dispose).order_by(N_dispose.d_dispose).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 @router.get("/master/apiexplosive")
 async def get_explosives(
@@ -133,9 +123,8 @@ async def get_explosives(
     db: AsyncSession = Depends(get_db), 
     current_user: AuthUser = Depends(get_current_user)
 ):
-    total = (await db.execute(select(func.count()).select_from(N_explosive))).scalar() or 0
     result = await db.execute(select(N_explosive).order_by(N_explosive.e_explosive).offset(skip).limit(limit))
-    return {"items": result.scalars().all(), "total": total}
+    return result.scalars().all()
 
 # --- Location Management ---
 
