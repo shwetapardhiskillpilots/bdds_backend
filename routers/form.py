@@ -389,12 +389,13 @@ async def update_form_first(
     db: AsyncSession = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    """Mirror Django's update_form_first: full incident update with casualty sync."""
     try:
-        data = await request.json()
+        raw_data = await request.json()
     except:
         form_data = await request.form()
-        data = dict(form_data)
+        raw_data = dict(form_data)
+        
+    data = clean_mobile_data(raw_data)
 
     result = await db.execute(select(Form_data).where(Form_data.id == id))
     form = result.scalar_one_or_none()
