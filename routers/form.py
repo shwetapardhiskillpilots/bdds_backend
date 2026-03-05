@@ -79,9 +79,93 @@ def safe_get_list(data, key):
 def safe_get_list_from_keys(data, keys):
     """Accept multiple possible keys for mobile/web payload compatibility."""
     for key in keys:
-        if key in data:
-            return safe_get_list(data, key)
+        items = safe_get_list(data, key)
+        if items:
+            return items
     return []
+
+def normalize_media_path(path_value):
+    """Normalize frontend media paths to a relative file path under ./media."""
+    if not path_value:
+        return ""
+
+    raw = str(path_value).strip()
+    if not raw:
+        return ""
+
+    for prefix in [
+        'http://',
+        'https://'
+    ]:
+        if raw.startswith(prefix):
+            slash_idx = raw.find('/', raw.find('://') + 3)
+            raw = raw[slash_idx:] if slash_idx != -1 else ''
+            break
+
+    if raw.startswith('/api_proxy/media/'):
+        return raw.replace('/api_proxy/media/', '', 1)
+    if raw.startswith('api_proxy/media/'):
+        return raw.replace('api_proxy/media/', '', 1)
+    if raw.startswith('/media/'):
+        return raw.replace('/media/', '', 1)
+    if raw.startswith('media/'):
+        return raw.replace('media/', '', 1)
+    return raw.lstrip('/')
+
+def delete_media_file(path_value):
+    """Delete a media file safely under ./media if it exists."""
+    clean_path = normalize_media_path(path_value)
+    if not clean_path:
+        return False
+
+    media_root = os.path.abspath("media")
+    full_path = os.path.abspath(os.path.join(media_root, clean_path))
+
+    if not (full_path == media_root or full_path.startswith(media_root + os.sep)):
+        return False
+
+    if os.path.isfile(full_path):
+        os.remove(full_path)
+        return True
+    return False
+
+def parse_datetime_flexible(date_str):
+    """Accept multiple datetime formats from web/mobile clients."""
+    import re
+
+    if not date_str:
+        return datetime.now()
+    if isinstance(date_str, datetime):
+        return date_str
+
+    value = str(date_str).strip()
+
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except:
+        pass
+
+    for fmt in [
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M',
+        '%Y-%m-%d'
+    ]:
+        try:
+            return datetime.strptime(value, fmt)
+        except:
+            continue
+
+    m = re.match(r'^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?)?$', value)
+    if m:
+        y, mon, d, h, mi, s = m.groups()
+        return datetime(
+            int(y), int(mon), int(d),
+            int(h or 0), int(mi or 0), int(s or 0)
+        )
+
+    return datetime.now()
 
 @router.post("/formapi")
 async def create_form(
@@ -114,19 +198,12 @@ async def create_form(
         try: return float(val) if val else None
         except: return None
         
-    def parse_date(date_str):
-        if not date_str: return datetime.now()
-        try:
-            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-        except:
-            return datetime.now()
-
     new_form = Form_data(
         user_id=current_user.id,
         fserial=fserial_no,
         d_bomb=data.get('bomb_value') or data.get('d_bomb'),
         fir=data.get('fir_value') or data.get('fir'),
-        fdate=parse_date(data.get('date&time') or data.get('fdate')),
+        fdate=parse_datetime_flexible(data.get('date&time') or data.get('fdate')),
         flocation=data.get('location_value') or data.get('flocation'),
         latitude=parse_float(data.get('latitude_value') or data.get('latitude')),
         longitude=parse_float(data.get('longitude_value') or data.get('longitude')),
@@ -179,13 +256,22 @@ async def create_form(
         )
 
     for p in safe_get_list_from_keys(data, ['death', 'death_data', 'death_person', 'death_persons']):
-        db.add(death_person(form_id=new_form.id, death_name=p.get('name') or p.get('death_name'), death_contact=p.get('contact') or p.get('death_contact')))
+        person_name = p.get('name') or p.get('death_name')
+        person_contact = p.get('contact') or p.get('death_contact')
+        if person_name or person_contact:
+            db.add(death_person(form_id=new_form.id, death_name=person_name, death_contact=person_contact))
             
     for p in safe_get_list_from_keys(data, ['injured', 'injured_data', 'injured_person', 'injured_persons']):
-        db.add(injured_person(form_id=new_form.id, injured_name=p.get('name') or p.get('injured_name'), injured_contact=p.get('contact') or p.get('injured_contact')))
+        person_name = p.get('name') or p.get('injured_name')
+        person_contact = p.get('contact') or p.get('injured_contact')
+        if person_name or person_contact:
+            db.add(injured_person(form_id=new_form.id, injured_name=person_name, injured_contact=person_contact))
             
     for p in safe_get_list_from_keys(data, ['explode', 'exploded', 'explode_data', 'exploded_data']):
-        db.add(exploded(form_id=new_form.id, exploded_name=p.get('name') or p.get('exploded_name'), explode_contact=p.get('contact') or p.get('explode_contact')))
+        person_name = p.get('name') or p.get('exploded_name')
+        person_contact = p.get('contact') or p.get('explode_contact')
+        if person_name or person_contact:
+            db.add(exploded(form_id=new_form.id, exploded_name=person_name, explode_contact=person_contact))
     
     await db.commit()
     return {"message": "Form submitted successfully", "id": new_form.id, "status": 200}
@@ -380,6 +466,17 @@ async def delete_form_data(
         raise HTTPException(status_code=404, detail="Form not found")
 
     try:
+        img_paths = (await db.execute(select(images.im_vi).where(images.form_id == f_id))).scalars().all()
+        report_paths = (await db.execute(select(s_report.special_report).where(s_report.form_id == f_id))).scalars().all()
+        sketch_paths = (await db.execute(select(sk_report.sketch_scence).where(sk_report.form_id == f_id))).scalars().all()
+
+        for path in img_paths:
+            delete_media_file(path)
+        for path in report_paths:
+            delete_media_file(path)
+        for path in sketch_paths:
+            delete_media_file(path)
+
         await db.execute(delete(images).where(images.form_id == f_id))
         await db.execute(delete(s_report).where(s_report.form_id == f_id))
         await db.execute(delete(sk_report).where(sk_report.form_id == f_id))
@@ -431,13 +528,7 @@ async def update_form_first(
     form.d_bomb = bomb
 
     if date_val:
-        try:
-            if 'T' in str(date_val):
-                form.fdate = datetime.strptime(str(date_val), '%Y-%m-%dT%H:%M')
-            else:
-                form.fdate = date_val
-        except:
-            form.fdate = date_val
+        form.fdate = parse_datetime_flexible(date_val)
 
     form.flocation = data.get('flocation') or data.get('loacation_uvalue')
     form.flocation_type_id = data.get('flocation_type') or data.get('location_ty_uvalue') or None
@@ -467,8 +558,10 @@ async def update_form_first(
     form.dispose_contact = data.get('dispose_contact') or data.get('dispose_contact_uvalue')
 
     # Update M2M Dalam
-    dalam_ids = data.get('fdalam') or data.get('dalam_uvalue', [])
+    dalam_ids = data.get('fdalam') or data.get('dalam_uvalue') or data.get('dalam_data') or []
     await db.execute(delete(form_dalam_association).where(form_dalam_association.c.form_data_id == id))
+    if dalam_ids and not isinstance(dalam_ids, list):
+        dalam_ids = [dalam_ids]
     if dalam_ids and isinstance(dalam_ids, list):
         for did in dalam_ids:
             await db.execute(form_dalam_association.insert().values(form_data_id=id, n_dalam_id=int(did)))
@@ -476,17 +569,26 @@ async def update_form_first(
     # Sync Death persons
     await db.execute(delete(death_person).where(death_person.form_id == id))
     for item in safe_get_list_from_keys(data, ['death', 'death_data', 'death_person', 'death_persons']):
-        db.add(death_person(form_id=id, death_name=item.get('death_name') or item.get('name'), death_contact=item.get('death_contact') or item.get('contact')))
+        person_name = item.get('death_name') or item.get('name')
+        person_contact = item.get('death_contact') or item.get('contact')
+        if person_name or person_contact:
+            db.add(death_person(form_id=id, death_name=person_name, death_contact=person_contact))
 
     # Sync Injured persons
     await db.execute(delete(injured_person).where(injured_person.form_id == id))
     for item in safe_get_list_from_keys(data, ['injured', 'injured_data', 'injured_person', 'injured_persons']):
-        db.add(injured_person(form_id=id, injured_name=item.get('injured_name') or item.get('name'), injured_contact=item.get('injured_contact') or item.get('contact')))
+        person_name = item.get('injured_name') or item.get('name')
+        person_contact = item.get('injured_contact') or item.get('contact')
+        if person_name or person_contact:
+            db.add(injured_person(form_id=id, injured_name=person_name, injured_contact=person_contact))
 
     # Sync Exploded persons
     await db.execute(delete(exploded).where(exploded.form_id == id))
     for item in safe_get_list_from_keys(data, ['explode', 'exploded', 'explode_data', 'exploded_data']):
-        db.add(exploded(form_id=id, exploded_name=item.get('exploded_name') or item.get('name'), explode_contact=item.get('explode_contact') or item.get('contact')))
+        person_name = item.get('exploded_name') or item.get('name')
+        person_contact = item.get('explode_contact') or item.get('contact')
+        if person_name or person_contact:
+            db.add(exploded(form_id=id, exploded_name=person_name, explode_contact=person_contact))
 
     await db.commit()
     return {"msg": "Incident updated successfully", "status": 200}
@@ -561,16 +663,12 @@ async def delete_image_api(
     if not obj_id:
         raise HTTPException(status_code=400, detail="ID required")
 
+    img_row = (await db.execute(select(images).where(images.id == obj_id))).scalar_one_or_none()
+
     # Delete record
     await db.execute(delete(images).where(images.id == obj_id))
     
-    # Delete file
-    if img_path:
-        # Strip potential leading /media/ prefix if sent by frontend
-        clean_path = img_path.replace('/media/', '').replace('media/', '')
-        full_path = os.path.join("media", clean_path)
-        if os.path.isfile(full_path):
-            os.remove(full_path)
+    delete_media_file(img_path or (img_row.im_vi if img_row else None))
             
     await db.commit()
     return {"msg": "Image deleted successfully", "status": 200}
@@ -594,15 +692,12 @@ async def delete_report_api(
     if not obj_id:
         raise HTTPException(status_code=400, detail="ID required")
 
+    report_row = (await db.execute(select(s_report).where(s_report.id == obj_id))).scalar_one_or_none()
+
     # Delete record
     await db.execute(delete(s_report).where(s_report.id == obj_id))
     
-    # Delete file
-    if report_path:
-        clean_path = report_path.replace('/media/', '').replace('media/', '')
-        full_path = os.path.join("media", clean_path)
-        if os.path.isfile(full_path):
-            os.remove(full_path)
+    delete_media_file(report_path or (report_row.special_report if report_row else None))
             
     await db.commit()
     return {"msg": "Report deleted successfully", "status": 200}
@@ -626,15 +721,12 @@ async def delete_sketch_api(
     if not obj_id:
         raise HTTPException(status_code=400, detail="ID required")
 
+    sketch_row = (await db.execute(select(sk_report).where(sk_report.id == obj_id))).scalar_one_or_none()
+
     # Delete record
     await db.execute(delete(sk_report).where(sk_report.id == obj_id))
     
-    # Delete file
-    if sketch_path:
-        clean_path = sketch_path.replace('/media/', '').replace('media/', '')
-        full_path = os.path.join("media", clean_path)
-        if os.path.isfile(full_path):
-            os.remove(full_path)
+    delete_media_file(sketch_path or (sketch_row.sketch_scence if sketch_row else None))
             
     await db.commit()
     return {"msg": "Sketch deleted successfully", "status": 200}

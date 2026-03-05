@@ -19,6 +19,7 @@ app.add_middleware(
 if not os.path.exists("media"):
     os.makedirs("media")
 app.mount("/media", StaticFiles(directory="media"), name="media")
+app.mount("/api_proxy/media", StaticFiles(directory="media"), name="api_proxy_media")
 
 # Include routers - mirroring exact Django paths
 app.include_router(auth.router)
