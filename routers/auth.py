@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
+from sqlalchemy.orm import selectinload
 from database import get_db
 from models import AuthUser, AuthToken, Nlogines_creations, N_degignation, N_post
 from auth import get_current_user
@@ -26,13 +27,27 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     password = data.get('password')
     
     if not username:
-        raise HTTPException(status_code=400, detail="Username required")
+        raise HTTPException(status_code=400, detail="Username / Email / Mobile required")
         
-    result = await db.execute(select(AuthUser).where(AuthUser.username == username))
+    # Search for user by username, email, or mobile number (l_numbers)
+    # Joining with Nlogines_creations as AuthUser doesn't have a direct phone field, 
+    # but Nlogines_creations has l_numbers.
+    stmt = (
+        select(AuthUser)
+        .outerjoin(Nlogines_creations, AuthUser.id == Nlogines_creations.user_id)
+        .where(
+            or_(
+                AuthUser.username == username,
+                AuthUser.email == username,
+                Nlogines_creations.l_numbers == username
+            )
+        )
+    )
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid username or password")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
         
     if not password:
         raise HTTPException(status_code=400, detail="Password required")
@@ -45,7 +60,7 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         is_valid = False
         
     if not is_valid:
-        raise HTTPException(status_code=400, detail="Invalid username or password")
+        raise HTTPException(status_code=400, detail="Invalid credentials")
     
     # Mirroring Token behavior
     token_result = await db.execute(select(AuthToken).where(AuthToken.user_id == user.id))
