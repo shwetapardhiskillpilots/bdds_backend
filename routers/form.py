@@ -50,23 +50,37 @@ def clean_mobile_data(data: dict) -> dict:
 def safe_get_list(data, key):
     """Ensure we get a list of dicts, even if double-stringified"""
     import json
+    import ast
     val = data.get(key, [])
-    if isinstance(val, str):
-        try:
-            val = json.loads(val)
-        except:
-            return []
+
+    def parse_value(value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except:
+                try:
+                    return ast.literal_eval(value)
+                except:
+                    return value
+        return value
+
+    val = parse_value(val)
+    if isinstance(val, dict):
+        return [val]
     if isinstance(val, list):
         parsed_list = []
         for item in val:
-            if isinstance(item, str):
-                try:
-                    item = json.loads(item)
-                except:
-                    continue
+            item = parse_value(item)
             if isinstance(item, dict):
                 parsed_list.append(item)
         return parsed_list
+    return []
+
+def safe_get_list_from_keys(data, keys):
+    """Accept multiple possible keys for mobile/web payload compatibility."""
+    for key in keys:
+        if key in data:
+            return safe_get_list(data, key)
     return []
 
 @router.post("/formapi")
@@ -164,13 +178,13 @@ async def create_form(
             )
         )
 
-    for p in safe_get_list(data, 'death'):
+    for p in safe_get_list_from_keys(data, ['death', 'death_data', 'death_person', 'death_persons']):
         db.add(death_person(form_id=new_form.id, death_name=p.get('name') or p.get('death_name'), death_contact=p.get('contact') or p.get('death_contact')))
             
-    for p in safe_get_list(data, 'injured'):
+    for p in safe_get_list_from_keys(data, ['injured', 'injured_data', 'injured_person', 'injured_persons']):
         db.add(injured_person(form_id=new_form.id, injured_name=p.get('name') or p.get('injured_name'), injured_contact=p.get('contact') or p.get('injured_contact')))
             
-    for p in safe_get_list(data, 'explode'):
+    for p in safe_get_list_from_keys(data, ['explode', 'exploded', 'explode_data', 'exploded_data']):
         db.add(exploded(form_id=new_form.id, exploded_name=p.get('name') or p.get('exploded_name'), explode_contact=p.get('contact') or p.get('explode_contact')))
     
     await db.commit()
@@ -461,17 +475,17 @@ async def update_form_first(
 
     # Sync Death persons
     await db.execute(delete(death_person).where(death_person.form_id == id))
-    for item in safe_get_list(data, 'death'):
+    for item in safe_get_list_from_keys(data, ['death', 'death_data', 'death_person', 'death_persons']):
         db.add(death_person(form_id=id, death_name=item.get('death_name') or item.get('name'), death_contact=item.get('death_contact') or item.get('contact')))
 
     # Sync Injured persons
     await db.execute(delete(injured_person).where(injured_person.form_id == id))
-    for item in safe_get_list(data, 'injured'):
+    for item in safe_get_list_from_keys(data, ['injured', 'injured_data', 'injured_person', 'injured_persons']):
         db.add(injured_person(form_id=id, injured_name=item.get('injured_name') or item.get('name'), injured_contact=item.get('injured_contact') or item.get('contact')))
 
     # Sync Exploded persons
     await db.execute(delete(exploded).where(exploded.form_id == id))
-    for item in safe_get_list(data, 'explode'):
+    for item in safe_get_list_from_keys(data, ['explode', 'exploded', 'explode_data', 'exploded_data']):
         db.add(exploded(form_id=id, exploded_name=item.get('exploded_name') or item.get('name'), explode_contact=item.get('explode_contact') or item.get('contact')))
 
     await db.commit()
