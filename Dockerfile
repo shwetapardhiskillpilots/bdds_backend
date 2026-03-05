@@ -20,6 +20,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the current directory contents into the container at /app
 COPY . .
 
+# Create media directory for uploaded files (images, reports, sketches)
+RUN mkdir -p /app/media
+
+# Declare media as a volume so uploads persist across container restarts
+VOLUME /app/media
+
 # Make port 8000 available to the world outside this container
 EXPOSE 8000
 
