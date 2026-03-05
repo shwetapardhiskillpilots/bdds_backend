@@ -38,13 +38,25 @@ async def get_criminal_detail(id: int, db: AsyncSession = Depends(get_db), curre
     )
     links_result = await db.execute(stmt)
     
+    from models import N_location
     history = []
     for link, form in links_result:
+        loc_obj = None
+        if form.flocation_type_id:
+            loc_res = await db.execute(select(N_location).where(N_location.id == form.flocation_type_id))
+            loc_obj = loc_res.scalar_one_or_none()
+
         history.append({
             "incident_id": form.id,
             "serial": form.fserial,
             "date": form.fdate,
-            "location": form.flocation,
+            "location": form.flocation, # Raw coordinates/data
+            "d_bomb": form.d_bomb, # Match Android entity @SerializedName
+            "flocation_type": {
+                "id": loc_obj.id if loc_obj else None,
+                "l_location": loc_obj.l_location if loc_obj else None,
+                "l_datetime": loc_obj.l_datetime.isoformat() if loc_obj and loc_obj.l_datetime else None
+            } if loc_obj else None, # Object for Android
             "role": link.role
         })
     

@@ -146,7 +146,8 @@ async def list_dashboard_forms(
     total_count = (await db.execute(count_stmt)).scalar() or 0
     
     # ── 2. Get Paginated Data ──
-    stmt = select(Form_data)
+    from models import N_location
+    stmt = select(Form_data, N_location).outerjoin(N_location, Form_data.flocation_type_id == N_location.id)
     if not current_user.is_superuser:
         stmt = stmt.filter(Form_data.user_id == current_user.id)
     
@@ -154,20 +155,24 @@ async def list_dashboard_forms(
     stmt = stmt.order_by(Form_data.fdate.desc()).offset(skip).limit(limit)
     
     result = await db.execute(stmt)
-    forms = result.scalars().all()
+    rows = result.all()
     
     return {
-        "items": [{
+        "form_data": [{ # Renamed 'items' to 'form_data' to match Android FormListResponse
             "id": f.id,
             "fserial": f.fserial,
-            "d_bomb": f.d_bomb,
+            "d_bomb": f.d_bomb, # Match Android @SerializedName("d_bomb") -> private String bomb
             "fdate": f.fdate,
-            "flocation": f.flocation,
-            "radio_data": f.radio_data, # Added for frontend status display
+            "flocation_type": {
+                "id": loc_obj.id if loc_obj else None,
+                "l_location": loc_obj.l_location if loc_obj else None,
+                "l_datetime": loc_obj.l_datetime.isoformat() if loc_obj and loc_obj.l_datetime else None
+            } if loc_obj else None, # Object for Android
+            "radio_data": f.radio_data,
             "user": f.user_id,
             "edit_request": f.edit_request,
             "delete_request": f.delete_request
-        } for f in forms],
+        } for f, loc_obj in rows],
         "total": total_count
     }
 
@@ -203,10 +208,18 @@ async def get_form_details(
     crim_res = await db.execute(crim_stmt)
     criminals = [{"id": c.id, "name": c.name, "alias": c.alias, "role": role} for c, role in crim_res.all()]
     
-    # Fetch Detection names
+    # Fetch Detection/Dispose/Location names
     detection_name = "N/A"
     dispose_name = "N/A"
+    loc_name_resolved = form.flocation
     
+    from models import N_location
+    if form.flocation_type_id:
+        loc_res = await db.execute(select(N_location).where(N_location.id == form.flocation_type_id))
+        loc_obj = loc_res.scalar_one_or_none()
+        if loc_obj:
+            loc_name_resolved = loc_obj.l_location
+
     if getattr(form, 'mode_of_detection_id', None):
         det_res = await db.execute(select(N_ditection).where(N_ditection.id == form.mode_of_detection_id))
         det_obj = det_res.scalar_one_or_none()
@@ -221,6 +234,22 @@ async def get_form_details(
 
     # Convert model to dict to add extra fields
     form_dict = {col.name: getattr(form, col.name) for col in form.__table__.columns}
+    form_dict.pop('flocation_type_id', None) # Remove as requested
+    form_dict['flocation'] = form.flocation # Raw coordinates/data
+    
+    # Try to find the location object again or use the one fetched above
+    if form.flocation_type_id:
+        loc_res = await db.execute(select(N_location).where(N_location.id == form.flocation_type_id))
+        loc_o = loc_res.scalar_one_or_none()
+    else:
+        loc_o = None
+
+    form_dict['flocation_type'] = {
+        "id": loc_o.id if loc_o else None,
+        "l_location": loc_o.l_location if loc_o else None,
+        "l_datetime": loc_o.l_datetime.isoformat() if loc_o and loc_o.l_datetime else None
+    } if loc_o else None # Object for Android
+    
     form_dict['mode_of_detection_name'] = detection_name
     form_dict['detected_dispose_name'] = dispose_name
     
@@ -229,8 +258,8 @@ async def get_form_details(
         "image_data": img_res.scalars().all(),
         "reports_data": rep_res.scalars().all(),
         "sketch_data": sk_res.scalars().all(),
-        "death_data": death_res.scalars().all(),
-        "injured_data": inj_res.scalars().all(),
-        "explode_data": exp_res.scalars().all(),
+        "death": death_res.scalars().all(), # Renamed from death_data
+        "injured": inj_res.scalars().all(), # Renamed from injured_data
+        "explode": exp_res.scalars().all(), # Renamed from explode_data
         "criminals": criminals
     }

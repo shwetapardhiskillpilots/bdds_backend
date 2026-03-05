@@ -185,10 +185,20 @@ _MASTER_CRUD = {
 }
 
 async def _parse_form_or_json(request):
+    import json
     try:
-        return await request.json()
+        data = await request.json()
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except:
+                pass
+        return data if isinstance(data, dict) else {}
     except:
-        return dict(await request.form())
+        try:
+            return dict(await request.form())
+        except:
+            return {}
 
 
 # ── Add endpoints ──
