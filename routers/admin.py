@@ -9,7 +9,7 @@ from models import (
     N_dispose, N_dalam
 )
 from auth import get_current_user
-from schemas import UserProfileResponse, MasterItemBase
+from schemas import UserProfileResponse, MasterItemResponse, MasterItemBase, UserPasswordReset
 
 router = APIRouter(prefix="/dashboard", tags=["admin"])
 
@@ -152,3 +152,23 @@ async def toggle_user_active(
     user.is_active = 0 if user.is_active else 1
     await db.commit()
     return {"id": user.id, "is_active": bool(user.is_active)}
+
+@router.post("/users/{id}/reset-password")
+async def reset_user_password(
+    id: int,
+    data: UserPasswordReset,
+    db: AsyncSession = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user)
+):
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    result = await db.execute(select(AuthUser).filter(AuthUser.id == id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Mirroring current backend behavior (plain text for alignment with bdds_backend)
+    user.password = data.new_password
+    await db.commit()
+    return {"message": "Password reset successfully"}

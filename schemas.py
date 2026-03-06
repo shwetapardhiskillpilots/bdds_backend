@@ -58,6 +58,9 @@ class UserProfileResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class UserPasswordReset(BaseModel):
+    new_password: str
+
 # --- SP Authority Schemas ---
 
 class SPAuthorityBase(BaseModel):
