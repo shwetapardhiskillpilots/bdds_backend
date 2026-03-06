@@ -172,7 +172,7 @@ async def list_dashboard_forms(
         count_stmt = count_stmt.filter(search_cond)
         stmt = stmt.filter(search_cond)
         
-    stmt = stmt.order_by(Form_data.fdate.desc()).offset(skip).limit(limit)
+    stmt = stmt.order_by(Form_data.id.desc()).offset(skip).limit(limit)
     
     # Execute count
     total_result = await db.execute(select(func.count()).select_from(count_stmt.subquery()))
