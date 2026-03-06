@@ -60,7 +60,27 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
         is_valid = False
         
     if not is_valid:
+        # Bug-web-07: Fallback to Nsp_authourity if not found in AuthUser or password mismatch
+        sp_stmt = select(Nsp_authourity).where(or_(Nsp_authourity.s_numbers == username, Nsp_authourity.s_email == username))
+        sp_result = await db.execute(sp_stmt)
+        sp_user = sp_result.scalar_one_or_none()
+        
+        # Bug-web-07 refined: Verify hashed password for SP Authority
+        if sp_user and pwd_context.verify(password, sp_user.s_password):
+            # Login as SP Authority
+            return {
+                'token': secrets.token_hex(20), # Temporary token for SP Authority
+                'user_id': sp_user.id,
+                'email': sp_user.s_email,
+                'Mobile_No': sp_user.s_numbers,
+                'User_Name': sp_user.s_name,
+                'status': 200,
+            }
         raise HTTPException(status_code=400, detail="Invalid credentials")
+    
+    # Bug-web-06: Check if user is active
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact administrator.")
     
     # Mirroring Token behavior
     token_result = await db.execute(select(AuthToken).where(AuthToken.user_id == user.id))
@@ -165,8 +185,8 @@ async def get_profile(
         "is_superuser": bool(current_user.is_superuser),
         "permission_edit": bool(lc.permission_edit) if lc else False,
         "permission_delete": bool(lc.permission_delete) if lc else False,
-        "designation": lc.l_designation if lc else "N/A",
-        "post": post_name,
+        "designation": lc.l_designation if lc and lc.l_designation else "Personnel",
+        "post": post_name if post_name != "N/A" else "HQ Unit",
         "status": 200
     }
 

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from typing import List
 from database import get_db
 from models import Nsp_authourity, AuthUser
-from auth import get_current_user
+from auth import get_current_user, pwd_context
 from schemas import SPAuthorityCreate, SPAuthorityResponse
 
 router = APIRouter(prefix="/sp-authority", tags=["sp-authority"])
@@ -39,7 +39,7 @@ async def create_sp_authority(
         s_numbers=data.s_numbers,
         s_designation=data.s_designation,
         s_email=data.s_email,
-        s_password=data.s_password # In production, this should be hashed
+        s_password=pwd_context.hash(data.s_password)
     )
     
     db.add(new_authority)

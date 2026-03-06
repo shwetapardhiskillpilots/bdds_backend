@@ -8,7 +8,7 @@ from models import (
     N_weight, N_explosive, N_assused, N_post, N_degignation, N_ditection, 
     N_dispose, N_dalam
 )
-from auth import get_current_user
+from auth import get_current_user, pwd_context
 from schemas import UserProfileResponse, MasterItemResponse, MasterItemBase, UserPasswordReset
 
 router = APIRouter(prefix="/dashboard", tags=["admin"])
@@ -168,7 +168,7 @@ async def reset_user_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Mirroring current backend behavior (plain text for alignment with bdds_backend)
-    user.password = data.new_password
+    # Bug-web-05: Hash the password for secure login
+    user.password = pwd_context.hash(data.new_password)
     await db.commit()
     return {"message": "Password reset successfully"}
