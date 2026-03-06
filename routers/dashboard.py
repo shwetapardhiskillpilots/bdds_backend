@@ -6,7 +6,8 @@ from database import get_db
 from models import (
     Form_data, AuthUser, death_person, injured_person, exploded,
     images, s_report, sk_report, CriminalDossier, CriminalLink,
-    N_ditection, N_dispose
+    N_ditection, N_dispose, N_location, N_juridiction, N_incident,
+    N_explosive, N_weight
 )
 from auth import get_current_user
 from schemas import DashboardStats
@@ -196,9 +197,21 @@ async def list_dashboard_forms(
             "user_id": f.user_id,
             "edit_request": f.edit_request,
             "delete_request": f.delete_request,
-            "flocation_type": {"l_location": f.flocation_type.l_location} if f.flocation_type else None,
-            "fjuridiction": {"l_juridiction": f.fjuridiction.l_juridiction} if f.fjuridiction else None,
-            "fincident": {"i_incident": f.fincident.i_incident} if f.fincident else None
+            "flocation_type": {
+                "id": f.flocation_type.id if f.flocation_type else None,
+                "name": f.flocation_type.l_location if f.flocation_type else None,
+                "l_location": f.flocation_type.l_location if f.flocation_type else None
+            } if f.flocation_type else None,
+            "fjuridiction": {
+                "id": f.fjuridiction.id if f.fjuridiction else None,
+                "name": f.fjuridiction.l_juridiction if f.fjuridiction else None,
+                "l_juridiction": f.fjuridiction.l_juridiction if f.fjuridiction else None
+            } if f.fjuridiction else None,
+            "fincident": {
+                "id": f.fincident.id if f.fincident else None,
+                "name": f.fincident.i_incident if f.fincident else None,
+                "i_incident": f.fincident.i_incident if f.fincident else None
+            } if f.fincident else None
         } for f in forms]
     }
 
@@ -238,13 +251,47 @@ async def get_form_details(
     detection_name = "N/A"
     dispose_name = "N/A"
     loc_name_resolved = form.flocation
-    
-    from models import N_location
+    juridiction_name = "N/A"
+    incident_name = "N/A"
+    explosive_name = "N/A"
+    weight_name = None
+    user_display_name = "System"
+
     if form.flocation_type_id:
         loc_res = await db.execute(select(N_location).where(N_location.id == form.flocation_type_id))
         loc_obj = loc_res.scalar_one_or_none()
         if loc_obj:
             loc_name_resolved = loc_obj.l_location
+
+    if form.fjuridiction_id:
+        jur_res = await db.execute(select(N_juridiction).where(N_juridiction.id == form.fjuridiction_id))
+        jur_obj = jur_res.scalar_one_or_none()
+        if jur_obj:
+            juridiction_name = jur_obj.l_juridiction
+
+    if form.fincident_id:
+        inc_res = await db.execute(select(N_incident).where(N_incident.id == form.fincident_id))
+        inc_obj = inc_res.scalar_one_or_none()
+        if inc_obj:
+            incident_name = inc_obj.i_incident
+
+    if form.fexplosive_id:
+        exp_ent_res = await db.execute(select(N_explosive).where(N_explosive.id == form.fexplosive_id))
+        exp_ent_obj = exp_ent_res.scalar_one_or_none()
+        if exp_ent_obj:
+            explosive_name = exp_ent_obj.e_explosive
+
+    if form.fweight_data_id:
+        w_res = await db.execute(select(N_weight).where(N_weight.id == form.fweight_data_id))
+        w_obj = w_res.scalar_one_or_none()
+        if w_obj:
+            weight_name = w_obj.w_weight
+
+    if form.user_id:
+        u_res = await db.execute(select(AuthUser).where(AuthUser.id == form.user_id))
+        u_obj = u_res.scalar_one_or_none()
+        if u_obj:
+            user_display_name = u_obj.first_name or u_obj.username
 
     if getattr(form, 'mode_of_detection_id', None):
         det_res = await db.execute(select(N_ditection).where(N_ditection.id == form.mode_of_detection_id))
@@ -279,6 +326,11 @@ async def get_form_details(
     
     form_dict['mode_of_detection_name'] = detection_name
     form_dict['detected_dispose_name'] = dispose_name
+    form_dict['fjuridiction_name'] = juridiction_name
+    form_dict['fincident_name'] = incident_name
+    form_dict['fexplosive_name'] = explosive_name
+    form_dict['fweight_data_name'] = weight_name
+    form_dict['user_name'] = user_display_name
     
     return {
         "form_data": [form_dict], # list for frontend compat
