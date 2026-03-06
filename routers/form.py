@@ -323,7 +323,7 @@ async def list_view(request: Request, db: AsyncSession = Depends(get_db), curren
             "id": form_obj.id,
             "fserial": form_obj.fserial,
             "d_bomb": form_obj.d_bomb,
-            "fdate": str(form_obj.fdate.date()) if form_obj.fdate else None,
+            "fdate": form_obj.fdate.strftime("%Y-%m-%d %H:%M:%S") if form_obj.fdate else None,
             "flocation": form_obj.flocation,
             "flocation_type": {"id": loc_o.id, "l_location": loc_o.l_location} if loc_o else None,
             "flocation_description": form_obj.flocation_description,
@@ -423,7 +423,7 @@ async def list_only(
             "id": form.id,
             "fserial": form.fserial,
             "d_bomb": form.d_bomb,
-            "fdate": str(form.fdate.date()) if isinstance(form.fdate, datetime) else str(form.fdate),
+            "fdate": form.fdate.strftime("%Y-%m-%d %H:%M:%S") if isinstance(form.fdate, datetime) else str(form.fdate),
             "flocation": form.flocation, # Raw coordinates as requested
             "flocation_type": {
                 "id": loc_obj.id if loc_obj else None,

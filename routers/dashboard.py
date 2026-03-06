@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select, text
 from database import get_db
@@ -128,52 +129,77 @@ async def get_dashboard_stats(
     return result
 
 
+from sqlalchemy.orm import joinedload
+
 @router.get("/forms")
 async def list_dashboard_forms(
     skip: int = 0,
-    limit: int = 10,
+    limit: int = 100,
+    search: Optional[str] = None,
+    status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user)
 ):
-    # Enforce maximum limit of 25
-    limit = min(limit, 25)
+    # Enforce maximum limit of 100
+    limit = min(limit, 100)
     
-    # ── 1. Get Total Count (for pagination) ──
-    count_stmt = select(func.count()).select_from(Form_data)
+    # Base query for total count
+    count_stmt = select(Form_data)
     if not current_user.is_superuser:
         count_stmt = count_stmt.filter(Form_data.user_id == current_user.id)
     
-    total_count = (await db.execute(count_stmt)).scalar() or 0
+    # Base query for items
+    stmt = select(Form_data).options(
+        joinedload(Form_data.flocation_type),
+        joinedload(Form_data.fjuridiction),
+        joinedload(Form_data.fincident)
+    )
     
-    # ── 2. Get Paginated Data ──
-    from models import N_location
-    stmt = select(Form_data, N_location).outerjoin(N_location, Form_data.flocation_type_id == N_location.id)
     if not current_user.is_superuser:
         stmt = stmt.filter(Form_data.user_id == current_user.id)
-    
-    # Sorting by date desc to show newest first
+        
+    if status and status != 'all':
+        count_stmt = count_stmt.filter(Form_data.radio_data == status)
+        stmt = stmt.filter(Form_data.radio_data == status)
+
+    if search:
+        search_filter = f"%{search}%"
+        search_cond = (
+            (Form_data.fserial.ilike(search_filter)) |
+            (Form_data.flocation.ilike(search_filter)) |
+            (Form_data.d_bomb.ilike(search_filter))
+        )
+        count_stmt = count_stmt.filter(search_cond)
+        stmt = stmt.filter(search_cond)
+        
     stmt = stmt.order_by(Form_data.fdate.desc()).offset(skip).limit(limit)
     
+    # Execute count
+    total_result = await db.execute(select(func.count()).select_from(count_stmt.subquery()))
+    total = total_result.scalar() or 0
+
+    # Execute items
     result = await db.execute(stmt)
-    rows = result.all()
+    forms = result.scalars().unique().all()
     
     return {
-        "form_data": [{ # Renamed 'items' to 'form_data' to match Android FormListResponse
+        "total": total,
+        "form_data": [{
             "id": f.id,
             "fserial": f.fserial,
-            "d_bomb": f.d_bomb, # Match Android @SerializedName("d_bomb") -> private String bomb
-            "fdate": f.fdate,
-            "flocation_type": {
-                "id": loc_obj.id if loc_obj else None,
-                "l_location": loc_obj.l_location if loc_obj else None,
-                "l_datetime": loc_obj.l_datetime.isoformat() if loc_obj and loc_obj.l_datetime else None
-            } if loc_obj else None, # Object for Android
+            "d_bomb": f.d_bomb,
+            "fdate": f.fdate.strftime("%Y-%m-%d %H:%M:%S") if f.fdate else None,
+            "flocation": f.flocation,
+            "flocation_description": f.flocation, # For mobile fallback
             "radio_data": f.radio_data,
-            "user": f.user_id,
+            "i_data": f.radio_data, # For web fallback
+            "user_id": f.user_id,
             "edit_request": f.edit_request,
-            "delete_request": f.delete_request
-        } for f, loc_obj in rows],
-        "total": total_count
+            "delete_request": f.delete_request,
+            "flocation_type": {"l_location": f.flocation_type.l_location} if f.flocation_type else None,
+            "fjuridiction": {"l_juridiction": f.fjuridiction.l_juridiction} if f.fjuridiction else None,
+            "fincident": {"i_incident": f.fincident.i_incident} if f.fincident else None
+        } for f in forms]
     }
 
 
@@ -236,6 +262,7 @@ async def get_form_details(
     form_dict = {col.name: getattr(form, col.name) for col in form.__table__.columns}
     form_dict.pop('flocation_type_id', None) # Remove as requested
     form_dict['flocation'] = form.flocation # Raw coordinates/data
+    form_dict['fdate'] = form.fdate.strftime("%Y-%m-%d %H:%M:%S") if form.fdate else None
     
     # Try to find the location object again or use the one fetched above
     if form.flocation_type_id:

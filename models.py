@@ -125,6 +125,9 @@ class Form_data(Base):
     is_public = Column(Integer, default=0) # 1 for reports from Public Awareness App
 
     fdalam = relationship("N_dalam", secondary=form_dalam_association)
+    flocation_type = relationship("N_location", foreign_keys=[flocation_type_id])
+    fjuridiction = relationship("N_juridiction", foreign_keys=[fjuridiction_id])
+    fincident = relationship("N_incident", foreign_keys=[fincident_id])
 
 class images(Base):
     __tablename__ = 'bdds_dashboard_images'

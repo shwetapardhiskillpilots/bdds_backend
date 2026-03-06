@@ -49,7 +49,7 @@ async def get_criminal_detail(id: int, db: AsyncSession = Depends(get_db), curre
         history.append({
             "incident_id": form.id,
             "serial": form.fserial,
-            "date": form.fdate,
+            "date": form.fdate.strftime("%Y-%m-%d %H:%M:%S") if form.fdate else None,
             "location": form.flocation, # Raw coordinates/data
             "d_bomb": form.d_bomb, # Match Android entity @SerializedName
             "flocation_type": {

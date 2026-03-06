@@ -26,6 +26,17 @@ async def upload_media(
     db: AsyncSession = Depends(get_db),
     user_id: int = Depends(get_current_user)
 ):
+    MAX_SIZE = 10 * 1024 * 1024  # 10MB
+    
+    # Pre-validation for all files
+    all_files = (im_vi or []) + (special_reports or []) + (sketch_scences or [])
+    for file in all_files:
+        if file.size > MAX_SIZE:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File {file.filename} exceeds the 10MB limit."
+            )
+
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     
     if im_vi:
