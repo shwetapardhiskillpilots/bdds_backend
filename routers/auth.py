@@ -4,13 +4,9 @@ from sqlalchemy import select, delete, or_
 from sqlalchemy.orm import selectinload
 from database import get_db
 from models import AuthUser, AuthToken, Nlogines_creations, N_degignation, N_post
-from auth import get_current_user
+from auth import get_current_user, pwd_context
 from datetime import datetime
 import secrets
-from passlib.context import CryptContext
-
-# Django uses pbkdf2_sha256 by default
-pwd_context = CryptContext(schemes=["django_pbkdf2_sha256"], deprecated="auto")
 
 router = APIRouter()
 

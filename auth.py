@@ -6,6 +6,10 @@ from sqlalchemy.orm import selectinload
 from database import get_db
 from models import AuthToken
 import time
+from passlib.context import CryptContext
+
+# Django uses pbkdf2_sha256 by default
+pwd_context = CryptContext(schemes=["django_pbkdf2_sha256"], deprecated="auto")
 
 API_KEY_NAME = "Authorization"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
