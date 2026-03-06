@@ -34,7 +34,13 @@ def clean_mobile_data(data: dict) -> dict:
     clean_data = {}
     for k, v in data.items():
         clean_k = k.strip(' "\'{}:')
-        val = v[0] if isinstance(v, list) and len(v) > 0 else v
+        
+        # Refined flattening: Only flatten if it's a single-item list AND not a dict/list
+        if isinstance(v, list) and len(v) == 1 and not isinstance(v[0], (dict, list)):
+            val = v[0]
+        else:
+            val = v
+            
         if isinstance(val, str):
             val = val.strip(' "\',}:')
             # Try to parse as JSON if it looks like a list or object
@@ -43,6 +49,7 @@ def clean_mobile_data(data: dict) -> dict:
                     val = json.loads(val)
                 except:
                     pass
+        
         if clean_k:
             clean_data[clean_k] = val
     return clean_data
