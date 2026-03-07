@@ -39,7 +39,7 @@ def _build_stats_sql(is_admin: bool) -> str:
         -- Form counts (all in one pass)
         COUNT(fd.id) AS total_case,
         SUM(CASE WHEN fd.radio_data = 'Exploded' THEN 1 ELSE 0 END) AS total_exposed,
-        SUM(CASE WHEN fd.radio_data = 'Detected' THEN 1 ELSE 0 END) AS total_detected,
+        SUM(CASE WHEN fd.radio_data = 'Detected' OR fd.radio_data = 'Incident Logged' OR fd.radio_data IS NULL THEN 1 ELSE 0 END) AS total_detected,
         -- Death/Injured (subqueries)
         (SELECT COUNT(*) FROM bdds_dashboard_death_person dp {death_filter}) AS total_death,
         (SELECT COUNT(*) FROM bdds_dashboard_injured_person ip {injured_filter}) AS total_injured,
@@ -83,6 +83,14 @@ async def get_dashboard_stats(
             GROUP BY j.l_juridiction ORDER BY cnt DESC LIMIT 5
         """)
         jur_results = (await db.execute(jur_sql)).all()
+        
+        loc_sql = text("""
+            SELECT l.l_location, COUNT(fd.id) AS cnt
+            FROM bdds_dashboard_n_location l
+            JOIN bdds_dashboard_form_data fd ON fd.flocation_type_id = l.id
+            GROUP BY l.l_location ORDER BY cnt DESC LIMIT 5
+        """)
+        loc_results = (await db.execute(loc_sql)).all()
     else:
         jur_sql = text("""
             SELECT j.l_juridiction, COUNT(fd.id) AS cnt
@@ -93,6 +101,15 @@ async def get_dashboard_stats(
         """)
         jur_results = (await db.execute(jur_sql, {"uid": uid})).all()
 
+        loc_sql = text("""
+            SELECT l.l_location, COUNT(fd.id) AS cnt
+            FROM bdds_dashboard_n_location l
+            JOIN bdds_dashboard_form_data fd ON fd.flocation_type_id = l.id
+            WHERE fd.user_id = :uid
+            GROUP BY l.l_location ORDER BY cnt DESC LIMIT 5
+        """)
+        loc_results = (await db.execute(loc_sql, {"uid": uid})).all()
+
     # ── Monthly Timeline ──
     if is_admin:
         month_sql = text("""
@@ -101,6 +118,13 @@ async def get_dashboard_stats(
             GROUP BY m ORDER BY MIN(fdate)
         """)
         month_results = (await db.execute(month_sql)).all()
+        
+        week_sql = text("""
+            SELECT DATE_FORMAT(fdate, '%x-W%v') AS w, COUNT(id) AS total
+            FROM bdds_dashboard_form_data
+            GROUP BY w ORDER BY MIN(fdate)
+        """)
+        week_results = (await db.execute(week_sql)).all()
     else:
         month_sql = text("""
             SELECT DATE_FORMAT(fdate, '%b %Y') AS m, COUNT(id) AS total
@@ -109,6 +133,14 @@ async def get_dashboard_stats(
             GROUP BY m ORDER BY MIN(fdate)
         """)
         month_results = (await db.execute(month_sql, {"uid": uid})).all()
+
+        week_sql = text("""
+            SELECT DATE_FORMAT(fdate, '%x-W%v') AS w, COUNT(id) AS total
+            FROM bdds_dashboard_form_data
+            WHERE user_id = :uid
+            GROUP BY w ORDER BY MIN(fdate)
+        """)
+        week_results = (await db.execute(week_sql, {"uid": uid})).all()
 
     result = {
         "total_case": counts.total_case or 0,
@@ -121,8 +153,12 @@ async def get_dashboard_stats(
         "total_dalam": counts.total_dalam or 0,
         "jur_labels": [r[0] for r in jur_results],
         "jur_counts": [r[1] for r in jur_results],
+        "loc_labels": [r[0] for r in loc_results],
+        "loc_counts": [r[1] for r in loc_results],
         "month_labels": [r[0] for r in month_results],
-        "month_counts": [r[1] for r in month_results]
+        "month_counts": [r[1] for r in month_results],
+        "week_labels": [r[0] for r in week_results],
+        "week_counts": [r[1] for r in week_results]
     }
 
     # Cache the result
@@ -307,23 +343,46 @@ async def get_form_details(
 
     # Convert model to dict to add extra fields
     form_dict = {col.name: getattr(form, col.name) for col in form.__table__.columns}
-    form_dict.pop('flocation_type_id', None) # Remove as requested
+    # Do NOT pop flocation_type_id as the frontend might need it
     form_dict['flocation'] = form.flocation # Raw coordinates/data
     form_dict['fdate'] = form.fdate.strftime("%Y-%m-%d %H:%M:%S") if form.fdate else None
     
-    # Try to find the location object again or use the one fetched above
-    if form.flocation_type_id:
-        loc_res = await db.execute(select(N_location).where(N_location.id == form.flocation_type_id))
-        loc_o = loc_res.scalar_one_or_none()
-    else:
-        loc_o = None
-
+    # Standardize Master Objects for Frontend
     form_dict['flocation_type'] = {
-        "id": loc_o.id if loc_o else None,
-        "l_location": loc_o.l_location if loc_o else None,
-        "l_datetime": loc_o.l_datetime.isoformat() if loc_o and loc_o.l_datetime else None
-    } if loc_o else None # Object for Android
-    
+        "id": loc_obj.id if (loc_obj := (await db.get(N_location, form.flocation_type_id))) else None,
+        "l_location": loc_obj.l_location if loc_obj else None,
+    } if form.flocation_type_id else None
+
+    form_dict['fjuridiction'] = {
+        "id": jur_obj.id if (jur_obj := (await db.get(N_juridiction, form.fjuridiction_id))) else None,
+        "l_juridiction": jur_obj.l_juridiction if jur_obj else None,
+    } if form.fjuridiction_id else None
+
+    form_dict['fincident'] = {
+        "id": inc_obj.id if (inc_obj := (await db.get(N_incident, form.fincident_id))) else None,
+        "i_incident": inc_obj.i_incident if inc_obj else None,
+    } if form.fincident_id else None
+
+    form_dict['fexplosive'] = {
+        "id": exp_ent_obj.id if (exp_ent_obj := (await db.get(N_explosive, form.fexplosive_id))) else None,
+        "e_explosive": exp_ent_obj.e_explosive if exp_ent_obj else None,
+    } if form.fexplosive_id else None
+
+    form_dict['fweight_data'] = {
+        "id": w_obj.id if (w_obj := (await db.get(N_weight, form.fweight_data_id))) else None,
+        "w_weight": w_obj.w_weight if w_obj else None,
+    } if form.fweight_data_id else None
+
+    form_dict['mode_of_detection'] = {
+        "id": det_obj.id if (det_obj := (await db.get(N_ditection, getattr(form, 'mode_of_detection_id', None)))) else None,
+        "d_ditection": det_obj.d_ditection if det_obj else None,
+    } if getattr(form, 'mode_of_detection_id', None) else None
+
+    form_dict['detected_dispose'] = {
+        "id": disp_obj.id if (disp_obj := (await db.get(N_dispose, getattr(form, 'detected_dispose_id', None)))) else None,
+        "d_dispose": disp_obj.d_dispose if disp_obj else None,
+    } if getattr(form, 'detected_dispose_id', None) else None
+
     form_dict['mode_of_detection_name'] = detection_name
     form_dict['detected_dispose_name'] = dispose_name
     form_dict['fjuridiction_name'] = juridiction_name
@@ -333,12 +392,12 @@ async def get_form_details(
     form_dict['user_name'] = user_display_name
     
     return {
-        "form_data": [form_dict], # list for frontend compat
+        "form_data": [form_dict],
         "image_data": img_res.scalars().all(),
         "reports_data": rep_res.scalars().all(),
         "sketch_data": sk_res.scalars().all(),
-        "death": death_res.scalars().all(), # Renamed from death_data
-        "injured": inj_res.scalars().all(), # Renamed from injured_data
-        "explode": exp_res.scalars().all(), # Renamed from explode_data
+        "death_data": death_res.scalars().all(), 
+        "injured_data": inj_res.scalars().all(), 
+        "explode_data": exp_res.scalars().all(), 
         "criminals": criminals
     }

@@ -150,6 +150,14 @@ async def toggle_user_active(
         raise HTTPException(status_code=404, detail="User not found")
     
     user.is_active = 0 if user.is_active else 1
+    
+    if user.is_active == 0:
+        from sqlalchemy import delete
+        from models import AuthToken
+        from auth import _token_cache
+        await db.execute(delete(AuthToken).where(AuthToken.user_id == user.id))
+        _token_cache.clear()
+
     await db.commit()
     return {"id": user.id, "is_active": bool(user.is_active)}
 

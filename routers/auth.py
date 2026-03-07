@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, or_
 from sqlalchemy.orm import selectinload
 from database import get_db
-from models import AuthUser, AuthToken, Nlogines_creations, N_degignation, N_post
+from models import AuthUser, AuthToken, Nlogines_creations, N_degignation, N_post, Nsp_authourity
 from auth import get_current_user, pwd_context
 from datetime import datetime
 import secrets
@@ -41,38 +41,79 @@ async def login(request: Request, db: AsyncSession = Depends(get_db)):
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid credentials")
         
     if not password:
         raise HTTPException(status_code=400, detail="Password required")
         
     # Verify the password against Django's hash
-    try:
-        is_valid = pwd_context.verify(password, user.password)
-    except Exception as e:
-        # Fallback if the hash format isn't recognized or is corrupted
-        is_valid = False
-        
+    is_valid = False
+    if user:
+        try:
+            is_valid = pwd_context.verify(password, user.password)
+        except Exception as e:
+            # Fallback if the hash format isn't recognized or is corrupted
+            is_valid = False
+            
+        # Check if the user password was directly stored as plaintext
+        if not is_valid and user.password == password:
+            is_valid = True
+            # Upgrade legacy plaintext password to secure hash immediately
+            user.password = pwd_context.hash(password)
+            await db.commit()
+            
     if not is_valid:
         # Bug-web-07: Fallback to Nsp_authourity if not found in AuthUser or password mismatch
         sp_stmt = select(Nsp_authourity).where(or_(Nsp_authourity.s_numbers == username, Nsp_authourity.s_email == username))
         sp_result = await db.execute(sp_stmt)
         sp_user = sp_result.scalar_one_or_none()
         
-        # Bug-web-07 refined: Verify hashed password for SP Authority
-        if sp_user and pwd_context.verify(password, sp_user.s_password):
-            # Login as SP Authority
-            return {
-                'token': secrets.token_hex(20), # Temporary token for SP Authority
-                'user_id': sp_user.id,
-                'email': sp_user.s_email,
-                'Mobile_No': sp_user.s_numbers,
-                'User_Name': sp_user.s_name,
-                'status': 200,
-            }
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        sp_is_valid = False
+        if sp_user:
+            try:
+                sp_is_valid = pwd_context.verify(password, sp_user.s_password)
+            except ValueError:
+                # Fallback if the hash format isn't recognized or it's plaintext
+                sp_is_valid = False
+            except Exception:
+                sp_is_valid = False
+                
+            if not sp_is_valid and sp_user.s_password == password:
+                sp_is_valid = True
+                
+        # Verify hashed password for SP Authority
+        if sp_user and sp_is_valid:
+            # Because SP Authorities historically had no AuthUser record, we must migrate/sync them here lazily
+            # check if they somehow got orphaned without an AuthUser mapping, 
+            # if so, construct the AuthUser dynamically mapping their credentials.
+            user_stmt = select(AuthUser).where(or_(AuthUser.username == sp_user.s_numbers, AuthUser.email == sp_user.s_email))
+            user_result = await db.execute(user_stmt)
+            user = user_result.scalar_one_or_none()
+            
+            if not user:
+                # Migrate sp_user into AuthUser
+                user = AuthUser(
+                    username=sp_user.s_numbers,
+                    email=sp_user.s_email,
+                    first_name=sp_user.s_name,
+                    last_name=sp_user.s_designation,
+                    password=pwd_context.hash(password), # Save as hashed in the new table
+                    is_active=1,
+                    is_staff=1,
+                    is_superuser=1,
+                    date_joined=datetime.utcnow()
+                )
+                db.add(user)
+                
+                # Also upgrade the old plaintext password in SP Authority to hashed so future logins are secure
+                sp_user.s_password = pwd_context.hash(password)
+                
+                await db.flush() # get ID
+                
+            # Now `user` exists and holds the standard SP Authority
+            # We skip the standard `is_valid` rejection and allow the logic to proceed below
+            is_valid = True
+        else:
+            raise HTTPException(status_code=400, detail="Invalid credentials")
     
     # Bug-web-06: Check if user is active
     if not user.is_active:

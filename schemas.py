@@ -15,8 +15,12 @@ class DashboardStats(BaseModel):
     total_dalam: int
     jur_labels: List[str]
     jur_counts: List[int]
+    loc_labels: List[str] = []
+    loc_counts: List[int] = []
     month_labels: List[str]
     month_counts: List[int]
+    week_labels: List[str] = []
+    week_counts: List[int] = []
 
 # --- Master CRUD Schemas ---
 

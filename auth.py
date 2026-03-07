@@ -35,7 +35,13 @@ async def get_current_user(token: str = Depends(api_key_header), db: AsyncSessio
     # Check cache first
     cached = _token_cache.get(token_key)
     if cached and (time.time() - cached["ts"]) < TOKEN_CACHE_TTL:
-        return cached["user"]
+        user = cached["user"]
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Your account has been deactivated.",
+            )
+        return user
 
     # Cache miss - hit DB
     result = await db.execute(select(AuthToken).options(selectinload(AuthToken.user)).where(AuthToken.key == token_key))
@@ -48,6 +54,12 @@ async def get_current_user(token: str = Depends(api_key_header), db: AsyncSessio
         )
     
     user = db_token.user
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your account has been deactivated.",
+        )
+
     # Cache the result
     _token_cache[token_key] = {"user": user, "ts": time.time()}
     return user

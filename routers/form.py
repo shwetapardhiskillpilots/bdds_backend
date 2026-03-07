@@ -280,7 +280,18 @@ async def create_form(
         if person_name or person_contact:
             db.add(exploded(form_id=new_form.id, exploded_name=person_name, explode_contact=person_contact))
     
-    await db.commit()
+    from sqlalchemy.exc import IntegrityError
+    
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        # This typically means a foreign key constraint failed (e.g. invalid incident_id)
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid selection data. One of the selected dropdown values (e.g., Incident Type, Jurisdiction) does not exist in the database. Please refresh your app and try again."
+        )
+        
     return {"message": "Form submitted successfully", "id": new_form.id, "status": 200}
 
 @router.post("/formviewapi")
@@ -538,32 +549,36 @@ async def update_form_first(
     if date_val:
         form.fdate = parse_datetime_flexible(date_val)
 
+    def parse_int(val):
+        try: return int(val) if val else None
+        except: return None
+
     form.flocation = data.get('flocation') or data.get('loacation_uvalue')
-    form.flocation_type_id = data.get('flocation_type') or data.get('location_ty_uvalue') or None
+    form.flocation_type_id = parse_int(data.get('flocation_type') or data.get('location_ty_uvalue'))
     form.flocation_description = data.get('flocation_description') or data.get('location_dy_uvalue')
-    form.fjuridiction_id = data.get('fjuridiction') or data.get('juridiction_uvalue') or None
-    form.fincident_id = data.get('fincident') or data.get('incident_uvalue') or None
-    form.fexplosive_id = data.get('fexplosive') or data.get('explosive_uvalue') or None
-    form.fweight_data_id = data.get('fweight_data') or data.get('weight_uvalue') or None
+    form.fjuridiction_id = parse_int(data.get('fjuridiction') or data.get('juridiction_uvalue'))
+    form.fincident_id = parse_int(data.get('fincident') or data.get('incident_uvalue'))
+    form.fexplosive_id = parse_int(data.get('fexplosive') or data.get('explosive_uvalue'))
+    form.fweight_data_id = parse_int(data.get('fweight_data') or data.get('weight_uvalue'))
     form.fdetonator = data.get('fdetonator') or data.get('detonator_uvalue')
     form.fswitch = data.get('fswitch') or data.get('switch_uvalue')
     form.ftarget = data.get('ftarget') or data.get('target_uvalue')
     form.fdistruction = data.get('fdistruction') or data.get('distruction_uvalue')
     form.fassume = data.get('fassume') or data.get('assused_uvalue')
-    form.fassume_status_new_id = data.get('fassume_status_new') or data.get('assused_status_uvalue') or None
+    form.fassume_status_new_id = parse_int(data.get('fassume_status_new') or data.get('assused_status_uvalue'))
     form.flearning = data.get('flearning') or data.get('mistake_uvalue')
     form.fir = data.get('fir') or data.get('fir_uvalue')
     form.latitude = data.get('latitude') or data.get('latitude_uvalue')
     form.longitude = data.get('longitude') or data.get('longitude_uvalue')
     form.radio_data = data.get('radio_data') or data.get('i_data')
 
-    form.mode_of_detection_id = data.get('mode_of_detection') or data.get('detection_uvalue') or None
-    form.detected_description = data.get('detected_description') or data.get('detected_description_uvalue')
-    form.detected_pname = data.get('detected_pname') or data.get('detected_pname_uvalue')
-    form.detcted_contact = data.get('detcted_contact') or data.get('detected_contact_uvalue')
-    form.detected_dispose_id = data.get('detected_dispose') or data.get('dispose_uvalue') or None
-    form.dispose_name = data.get('dispose_name') or data.get('dispose_name_uvalue')
-    form.dispose_contact = data.get('dispose_contact') or data.get('dispose_contact_uvalue')
+    form.mode_of_detection_id = parse_int(data.get('mode_of_detection') or data.get('detection_uvalue') or data.get('mode_detection'))
+    form.detected_description = data.get('detected_description') or data.get('detected_description_uvalue') or data.get('mode_description')
+    form.detected_pname = data.get('detected_pname') or data.get('detected_pname_uvalue') or data.get('detected_name')
+    form.detcted_contact = data.get('detcted_contact') or data.get('detected_contact_uvalue') or data.get('detected_contact')
+    form.detected_dispose_id = parse_int(data.get('detected_dispose') or data.get('dispose_uvalue') or data.get('detected_despose'))
+    form.dispose_name = data.get('dispose_name') or data.get('dispose_name_uvalue') or data.get('despose_name')
+    form.dispose_contact = data.get('dispose_contact') or data.get('dispose_contact_uvalue') or data.get('despose_contact')
 
     # Update M2M Dalam
     dalam_ids = data.get('fdalam') or data.get('dalam_uvalue') or data.get('dalam_data') or []
@@ -598,7 +613,17 @@ async def update_form_first(
         if person_name or person_contact:
             db.add(exploded(form_id=id, exploded_name=person_name, explode_contact=person_contact))
 
-    await db.commit()
+    from sqlalchemy.exc import IntegrityError
+    
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid selection data. One of the selected dropdown values (e.g., Incident Type, Jurisdiction) does not exist in the database. Please refresh your app and try again."
+        )
+
     return {"msg": "Incident updated successfully", "status": 200}
 
 
