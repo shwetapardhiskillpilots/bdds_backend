@@ -173,8 +173,21 @@ def parse_datetime_flexible(date_str):
         )
 
     return datetime.now()
+    
+def normalize_status(val):
+    if not val: 
+        return ""
+    val_str = str(val).strip()
+    # Handle mobile app specific typos or variations
+    if "Detected" in val_str:
+        return "Detected"
+    if "Exploded" in val_str:
+        return "Exploded"
+    if "Incident Logged" in val_str:
+        return "Incident Logged"
+    return val_str
 
-@router.post("/formapi")
+@router.post("/formapi", status_code=201)
 async def create_form(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -187,6 +200,12 @@ async def create_form(
         raw_data = dict(form_data)
         
     data = clean_mobile_data(raw_data)
+
+    try:
+        with open("/tmp/bdds_payload.log", "a") as f:
+            f.write(f"CREATE /formapi payload: {str(data)}\n")
+    except Exception as e:
+        print(f"Log Error: {e}")
     
     fserial_no = data.get('serial_value') or data.get('fserial')
     if not fserial_no:
@@ -225,7 +244,7 @@ async def create_form(
         ftarget=data.get('target_data') or data.get('ftarget'),
         fdistruction=data.get('distruction_data') or data.get('fdistruction'),
         fassume=data.get('assume_data') or data.get('fassume'),
-        radio_data=data.get('i_data') or data.get('radio_data'),
+        radio_data=normalize_status(data.get('radio_data') or data.get('i_data')),
         fassume_status_new_id=parse_int(data.get('assume_status') or data.get('fassume_status_new') or data.get('fassume_status_new_id')),
         flearning=data.get('learning_data') or data.get('flearning'),
         mode_of_detection_id=parse_int(data.get('mode_detection') or data.get('mode_of_detection') or data.get('mode_of_detection_id')),
@@ -570,7 +589,7 @@ async def update_form_first(
     form.fir = data.get('fir') or data.get('fir_uvalue')
     form.latitude = data.get('latitude') or data.get('latitude_uvalue')
     form.longitude = data.get('longitude') or data.get('longitude_uvalue')
-    form.radio_data = data.get('radio_data') or data.get('i_data')
+    form.radio_data = normalize_status(data.get('radio_data') or data.get('i_data'))
 
     form.mode_of_detection_id = parse_int(data.get('mode_of_detection') or data.get('detection_uvalue') or data.get('mode_detection'))
     form.detected_description = data.get('detected_description') or data.get('detected_description_uvalue') or data.get('mode_description')

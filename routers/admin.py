@@ -119,19 +119,33 @@ async def list_users(
     result = await db.execute(select(AuthUser))
     users = result.scalars().all()
     res = []
+    
     for user in users:
-        # Try to find associated login_creation data
-        lc_result = await db.execute(select(Nlogines_creations).filter(Nlogines_creations.user_id == user.id))
-        lc = lc_result.scalar_one_or_none()
+        # Try to find associated login_creation data, post name, and designation name
+        lc_result = await db.execute(
+            select(Nlogines_creations, N_post.p_post, N_degignation.d_designation)
+            .outerjoin(N_post, Nlogines_creations.post_id == N_post.id)
+            .outerjoin(N_degignation, Nlogines_creations.join_designation_id == N_degignation.id)
+            .filter(Nlogines_creations.user_id == user.id)
+        )
+        row = lc_result.first()
+        if row:
+            lc, post_name, desig_name = row
+            # If the join string is missing, fallback to l_designation or "N/A"
+            final_designation = desig_name or lc.l_designation or "N/A"
+        else:
+            lc, post_name, final_designation = None, "N/A", "N/A"
+            
         res.append({
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "mobile": lc.l_numbers if lc else "N/A",
             "first_name": user.first_name,
             "is_active": bool(user.is_active),
             "is_superuser": bool(user.is_superuser),
-            "designation": lc.l_designation if lc else "N/A",
-            "post": "N/A" # Simplified for now
+            "designation": final_designation,
+            "post": post_name if post_name else "N/A"
         })
     return res
 

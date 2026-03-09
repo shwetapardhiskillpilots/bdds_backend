@@ -56,6 +56,7 @@ class UserProfileResponse(BaseModel):
     first_name: Optional[str]
     designation: Optional[str]
     post: Optional[str]
+    mobile: Optional[str]
     is_active: bool
     is_superuser: bool
 

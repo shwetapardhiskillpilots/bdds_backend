@@ -7,11 +7,12 @@ from models import (
     Form_data, AuthUser, death_person, injured_person, exploded,
     images, s_report, sk_report, CriminalDossier, CriminalLink,
     N_ditection, N_dispose, N_location, N_juridiction, N_incident,
-    N_explosive, N_weight
+    N_explosive, N_weight, N_assused, N_dalam, form_dalam_association
 )
 from auth import get_current_user
 from schemas import DashboardStats
 import time
+from datetime import datetime, timedelta
 
 
 # ── Simple TTL Cache (avoids repeated remote DB calls) ──
@@ -20,26 +21,30 @@ CACHE_TTL = 2  # seconds
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-def _build_stats_sql(is_admin: bool) -> str:
+def _build_stats_sql(is_admin: bool, has_time_filter: bool = False) -> str:
     """
     Build ONE single SQL statement that returns all dashboard data.
     This minimizes round-trips to the remote database server for maximum speed.
     """
+    time_clause = " AND fd.fdate >= :start_date" if has_time_filter else ""
+    time_clause_fd2 = " AND fd2.fdate >= :start_date" if has_time_filter else ""
+    time_clause_fd3 = " AND fd3.fdate >= :start_date" if has_time_filter else ""
+
     if is_admin:
-        user_filter = ""
-        death_filter = ""
-        injured_filter = ""
+        base_filter = f"WHERE 1=1{time_clause}"
+        death_filter = f"JOIN bdds_dashboard_form_data fd2 ON dp.form_id = fd2.id WHERE 1=1{time_clause_fd2}"
+        injured_filter = f"JOIN bdds_dashboard_form_data fd3 ON ip.form_id = fd3.id WHERE 1=1{time_clause_fd3}"
     else:
-        user_filter = "WHERE fd.user_id = :uid"
-        death_filter = "JOIN bdds_dashboard_form_data fd2 ON dp.form_id = fd2.id WHERE fd2.user_id = :uid"
-        injured_filter = "JOIN bdds_dashboard_form_data fd3 ON ip.form_id = fd3.id WHERE fd3.user_id = :uid"
+        base_filter = f"WHERE fd.user_id = :uid{time_clause}"
+        death_filter = f"JOIN bdds_dashboard_form_data fd2 ON dp.form_id = fd2.id WHERE fd2.user_id = :uid{time_clause_fd2}"
+        injured_filter = f"JOIN bdds_dashboard_form_data fd3 ON ip.form_id = fd3.id WHERE fd3.user_id = :uid{time_clause_fd3}"
 
     return f"""
     SELECT
         -- Form counts (all in one pass)
         COUNT(fd.id) AS total_case,
         SUM(CASE WHEN fd.radio_data = 'Exploded' THEN 1 ELSE 0 END) AS total_exposed,
-        SUM(CASE WHEN fd.radio_data = 'Detected' OR fd.radio_data = 'Incident Logged' OR fd.radio_data IS NULL THEN 1 ELSE 0 END) AS total_detected,
+        SUM(CASE WHEN fd.radio_data = 'Detected' OR fd.radio_data = 'Incident Logged' OR fd.radio_data = '' OR fd.radio_data IS NULL OR fd.radio_data = 'Detected, will be provifed' THEN 1 ELSE 0 END) AS total_detected,
         -- Death/Injured (subqueries)
         (SELECT COUNT(*) FROM bdds_dashboard_death_person dp {death_filter}) AS total_death,
         (SELECT COUNT(*) FROM bdds_dashboard_injured_person ip {injured_filter}) AS total_injured,
@@ -48,12 +53,13 @@ def _build_stats_sql(is_admin: bool) -> str:
         (SELECT COUNT(*) FROM bdds_dashboard_n_location) AS total_location,
         (SELECT COUNT(*) FROM bdds_dashboard_n_dalam) AS total_dalam
     FROM bdds_dashboard_form_data fd
-    {user_filter}
+    {base_filter}
     """
 
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
+    time_filter: Optional[str] = 'all',
     db: AsyncSession = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user)
 ):
@@ -63,52 +69,69 @@ async def get_dashboard_stats(
     """
     is_admin = bool(current_user.is_superuser)
     uid = current_user.id
-    cache_key = "admin" if is_admin else f"user_{uid}"
+    cache_key = f"admin_{time_filter}" if is_admin else f"user_{uid}_{time_filter}"
 
     # Return cached response if fresh
     cached = _stats_cache.get(cache_key)
     if cached and (time.time() - cached["ts"]) < CACHE_TTL:
         return cached["data"]
 
+    start_date = None
+    if time_filter == 'today':
+        start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    elif time_filter == 'week':
+        start_date = datetime.now() - timedelta(days=7)
+    elif time_filter == 'month':
+        start_date = datetime.now() - timedelta(days=30)
+    elif time_filter == 'year':
+        start_date = datetime.now() - timedelta(days=365)
+        
+    params = {"uid": uid}
+    if start_date:
+        params["start_date"] = start_date
+
     # ── SINGLE QUERY for all counts ──
-    counts_sql = text(_build_stats_sql(is_admin))
-    counts = (await db.execute(counts_sql, {"uid": uid})).one()
+    counts_sql = text(_build_stats_sql(is_admin, has_time_filter=bool(start_date)))
+    counts = (await db.execute(counts_sql, params)).one()
 
     # ── Jurisdiction Top 5 ──
+    time_cond = "AND fd.fdate >= :start_date" if start_date else ""
     if is_admin:
-        jur_sql = text("""
+        jur_sql = text(f"""
             SELECT j.l_juridiction, COUNT(fd.id) AS cnt
             FROM bdds_dashboard_n_juridiction j
             JOIN bdds_dashboard_form_data fd ON fd.fjuridiction_id = j.id
+            WHERE 1=1 {time_cond}
             GROUP BY j.l_juridiction ORDER BY cnt DESC LIMIT 5
         """)
-        jur_results = (await db.execute(jur_sql)).all()
+        jur_results = (await db.execute(jur_sql, params)).all()
         
-        loc_sql = text("""
+        loc_sql = text(f"""
             SELECT l.l_location, COUNT(fd.id) AS cnt
             FROM bdds_dashboard_n_location l
             JOIN bdds_dashboard_form_data fd ON fd.flocation_type_id = l.id
+            WHERE 1=1 {time_cond}
             GROUP BY l.l_location ORDER BY cnt DESC LIMIT 5
         """)
-        loc_results = (await db.execute(loc_sql)).all()
+        loc_results = (await db.execute(loc_sql, params)).all()
     else:
-        jur_sql = text("""
+        jur_sql = text(f"""
             SELECT j.l_juridiction, COUNT(fd.id) AS cnt
             FROM bdds_dashboard_n_juridiction j
             JOIN bdds_dashboard_form_data fd ON fd.fjuridiction_id = j.id
-            WHERE fd.user_id = :uid
+            WHERE fd.user_id = :uid {time_cond}
             GROUP BY j.l_juridiction ORDER BY cnt DESC LIMIT 5
         """)
-        jur_results = (await db.execute(jur_sql, {"uid": uid})).all()
+        jur_results = (await db.execute(jur_sql, params)).all()
 
-        loc_sql = text("""
+        loc_sql = text(f"""
             SELECT l.l_location, COUNT(fd.id) AS cnt
             FROM bdds_dashboard_n_location l
             JOIN bdds_dashboard_form_data fd ON fd.flocation_type_id = l.id
-            WHERE fd.user_id = :uid
+            WHERE fd.user_id = :uid {time_cond}
             GROUP BY l.l_location ORDER BY cnt DESC LIMIT 5
         """)
-        loc_results = (await db.execute(loc_sql, {"uid": uid})).all()
+        loc_results = (await db.execute(loc_sql, params)).all()
 
     # ── Monthly Timeline ──
     if is_admin:
@@ -174,6 +197,7 @@ async def list_dashboard_forms(
     limit: int = 100,
     search: Optional[str] = None,
     status: Optional[str] = None,
+    sort_by: Optional[str] = 'newest',
     db: AsyncSession = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user)
 ):
@@ -209,7 +233,17 @@ async def list_dashboard_forms(
         count_stmt = count_stmt.filter(search_cond)
         stmt = stmt.filter(search_cond)
         
-    stmt = stmt.order_by(Form_data.id.desc()).offset(skip).limit(limit)
+    if sort_by == 'oldest':
+        stmt = stmt.order_by(Form_data.fdate.asc())
+    elif sort_by == 'serial':
+        stmt = stmt.order_by(Form_data.fserial.asc())
+    elif sort_by == 'status':
+        # Simple string asc puts Exploded first usually if others are higher alphabetically, but let's sort by radio_data
+        stmt = stmt.order_by(Form_data.radio_data.asc())
+    else:  # newest
+        stmt = stmt.order_by(Form_data.id.desc())
+        
+    stmt = stmt.offset(skip).limit(limit)
     
     # Execute count
     total_result = await db.execute(select(func.count()).select_from(count_stmt.subquery()))
@@ -341,6 +375,20 @@ async def get_form_details(
         if disp_obj:
             dispose_name = disp_obj.d_dispose
 
+    fassume_status_new_name = "N/A"
+    if form.fassume_status_new_id:
+        assused_res = await db.execute(select(N_assused).where(N_assused.id == form.fassume_status_new_id))
+        assused_obj = assused_res.scalar_one_or_none()
+        if assused_obj:
+            fassume_status_new_name = assused_obj.a_assused
+
+    dalam_stmt = select(N_dalam.d_dalam).join(
+        form_dalam_association, form_dalam_association.c.n_dalam_id == N_dalam.id
+    ).filter(form_dalam_association.c.form_data_id == id)
+    dalam_res = await db.execute(dalam_stmt)
+    dalam_names = [d for d in dalam_res.scalars().all()]
+    fdalam_name = ", ".join(dalam_names) if dalam_names else "N/A"
+
     # Convert model to dict to add extra fields
     form_dict = {col.name: getattr(form, col.name) for col in form.__table__.columns}
     # Do NOT pop flocation_type_id as the frontend might need it
@@ -390,6 +438,8 @@ async def get_form_details(
     form_dict['fexplosive_name'] = explosive_name
     form_dict['fweight_data_name'] = weight_name
     form_dict['user_name'] = user_display_name
+    form_dict['fassume_status_new_name'] = fassume_status_new_name
+    form_dict['fdalam_name'] = fdalam_name
     
     return {
         "form_data": [form_dict],
